@@ -50,12 +50,12 @@
                         <argument>-Xms48M</argument>
                         <argument>-Xmx48M</argument>
                         <argument>-XX:+UseSerialGC</argument>
-                        <argument>-XX:MaxMetaspaceSize=24M</argument>
-                        <argument>-XX:CompressedClassSpaceSize=8M</argument>
+                        <argument>-XX:MaxMetaspaceSize=32M</argument>
+                        <argument>-XX:CompressedClassSpaceSize=12M</argument>
                         <argument>-Xss256k</argument>
                         <argument>-XX:MaxDirectMemorySize=16M</argument>
                         <argument>-Dminestom.entity-view-distance=1</argument>
-                        <argument>-Dminestom.chunk-view-distance=2</argument>
+                        <argument>-Dminestom.chunk-view-distance=8</argument>
                         <argument>-classpath</argument>
                         <classpath/>
                         <argument>fr.mathias.lobby.Main</argument>
