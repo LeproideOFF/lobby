@@ -55,7 +55,7 @@
                         <argument>-Xss256k</argument>
                         <argument>-XX:MaxDirectMemorySize=16M</argument>
                         <argument>-Dminestom.entity-view-distance=1</argument>
-                        <argument>-Dminestom.chunk-view-distance=3</argument>
+                        <argument>-Dminestom.chunk-view-distance=2</argument>
                         <argument>-classpath</argument>
                         <classpath/>
                         <argument>fr.mathias.lobby.Main</argument>

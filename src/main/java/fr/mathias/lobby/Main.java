@@ -18,13 +18,13 @@ import net.minestom.server.instance.block.Block;
 import net.minestom.server.world.DimensionType;
 import net.minestom.server.command.builder.Command;
 import net.minestom.server.command.builder.arguments.ArgumentType;
-import net.minestom.server.coordinate.Point;
 import net.minestom.server.timer.TaskSchedule;
 import net.minestom.server.scoreboard.Sidebar;
 import net.minestom.server.network.packet.server.play.ParticlePacket;
 import net.minestom.server.particle.Particle;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.sound.Sound;
 import net.minestom.server.sound.SoundEvent;
 import net.minestom.server.entity.PlayerSkin;
@@ -35,13 +35,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
 
 public class Main {
-    private static final Map<UUID, Point> pos1 = new HashMap<>();
-    private static final Map<UUID, Point> pos2 = new HashMap<>();
     private static final Pos SPAWN_POS = new Pos(0.5, 99, 0.5);
     private static Sidebar sidebar;
 
@@ -69,7 +64,7 @@ public class Main {
             sidebar.updateLineContent("players", Component.text("Players: ", NamedTextColor.WHITE).append(Component.text(online, NamedTextColor.GREEN)));
             Component info = Component.text("RAM: " + usedMem + "MB", NamedTextColor.GOLD);
             for (Player p : instance.getPlayers()) p.sendActionBar(info);
-            return TaskSchedule.seconds(1);
+            return TaskSchedule.seconds(2);
         });
 
         // Announcements
@@ -159,18 +154,5 @@ public class Main {
             }
         }, textArg);
         mgr.register(holoCmd);
-
-        mgr.register(new Command("/pos1") {{ setDefaultExecutor((s, c) -> { if (s instanceof Player p) { pos1.put(p.getUuid(), p.getPosition().asVec().apply(Vec.Operator.FLOOR)); p.sendMessage(Component.text("Pos 1 OK")); } }); }});
-        mgr.register(new Command("/pos2") {{ setDefaultExecutor((s, c) -> { if (s instanceof Player p) { pos2.put(p.getUuid(), p.getPosition().asVec().apply(Vec.Operator.FLOOR)); p.sendMessage(Component.text("Pos 2 OK")); } }); }});
-        Command set = new Command("/set"); var block = ArgumentType.BlockState("block");
-        set.addSyntax((s, c) -> { if (s instanceof Player p) { Point p1 = pos1.get(p.getUuid()); Point p2 = pos2.get(p.getUuid()); if (p1 != null && p2 != null) fill(instance, p1, p2, c.get(block)); } }, block);
-        mgr.register(set);
-    }
-
-    private static void fill(InstanceContainer instance, Point p1, Point p2, Block block) {
-        int minX = Math.min(p1.blockX(), p2.blockX()); int maxX = Math.max(p1.blockX(), p2.blockX());
-        int minY = Math.min(p1.blockY(), p2.blockY()); int maxY = Math.max(p1.blockY(), p2.blockY());
-        int minZ = Math.min(p1.blockZ(), p2.blockZ()); int maxZ = Math.max(p1.blockZ(), p2.blockZ());
-        for (int x = minX; x <= maxX; x++) for (int y = minY; y <= maxY; y++) for (int z = minZ; z <= maxZ; z++) instance.setBlock(x, y, z, block);
     }
 }
