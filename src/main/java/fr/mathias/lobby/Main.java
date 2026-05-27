@@ -52,6 +52,8 @@ public class Main {
 
         // Scoreboard
         sidebar = new Sidebar(Component.text("--- INFOS ---", NamedTextColor.GOLD));
+        sidebar.createLine(new Sidebar.ScoreboardLine("ram", Component.text("RAM: ..."), 1));
+        sidebar.createLine(new Sidebar.ScoreboardLine("players", Component.text("Players: ..."), 0));
 
         Entity hologram = new Entity(EntityType.TEXT_DISPLAY);
         TextDisplayMeta meta = (TextDisplayMeta) hologram.getEntityMeta();
@@ -62,8 +64,8 @@ public class Main {
         MinecraftServer.getSchedulerManager().submitTask(() -> {
             long usedMem = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024;
             int online = MinecraftServer.getConnectionManager().getOnlinePlayers().size();
-            sidebar.createLine(new Sidebar.ScoreboardLine("ram", Component.text("RAM: ", NamedTextColor.WHITE).append(Component.text(usedMem + "MB", NamedTextColor.AQUA)), 1));
-            sidebar.createLine(new Sidebar.ScoreboardLine("players", Component.text("Players: ", NamedTextColor.WHITE).append(Component.text(online, NamedTextColor.GREEN)), 0));
+            sidebar.updateLineContent("ram", Component.text("RAM: ", NamedTextColor.WHITE).append(Component.text(usedMem + "MB", NamedTextColor.AQUA)));
+            sidebar.updateLineContent("players", Component.text("Players: ", NamedTextColor.WHITE).append(Component.text(online, NamedTextColor.GREEN)));
             Component info = Component.text("RAM: " + usedMem + "MB", NamedTextColor.GOLD);
             for (Player p : instance.getPlayers()) p.sendActionBar(info);
             return TaskSchedule.seconds(1);
