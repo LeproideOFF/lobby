@@ -28,17 +28,23 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.sound.Sound;
 import net.minestom.server.sound.SoundEvent;
-import net.minestom.server.tag.Tag;
+import net.minestom.server.entity.PlayerSkin;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
     private static final Map<UUID, Point> pos1 = new HashMap<>();
     private static final Map<UUID, Point> pos2 = new HashMap<>();
     private static final Pos SPAWN_POS = new Pos(0.5, 40, 0.5);
-    private static final Tag<Long> JUMP_COOLDOWN = Tag.Long("jump_cd");
     private static Sidebar sidebar;
 
     public static void main(String[] args) {
@@ -57,12 +63,34 @@ public class Main {
         sidebar.createLine(new Sidebar.ScoreboardLine("ram", Component.text("RAM: ..."), 1));
         sidebar.createLine(new Sidebar.ScoreboardLine("players", Component.text("Players: ..."), 0));
 
-        Entity hologram = new Entity(EntityType.TEXT_DISPLAY);
-        TextDisplayMeta hMeta = (TextDisplayMeta) hologram.getEntityMeta();
-        hMeta.setText(Component.text("BIENVENUE SUR LE SPAWN", NamedTextColor.AQUA, TextDecoration.BOLD));
-        hologram.setInstance(instance, new Pos(0.5, 42, 0.5));
+        // Block updater task
+        instance.loadChunk(0, 0).thenAccept(chunk -> {
+            AtomicInteger x = new AtomicInteger(-16);
+            AtomicInteger y = new AtomicInteger(30);
+            AtomicInteger z = new AtomicInteger(-16);
+            
+            MinecraftServer.getSchedulerManager().submitTask(() -> {
+                for (int i = 0; i < 50; i++) {
+                    if (y.get() > 50) return TaskSchedule.stop();
+                    
+                    Block b = instance.getBlock(x.get(), y.get(), z.get());
+                    if (!b.isAir()) {
+                        instance.setBlock(x.get(), y.get(), z.get(), b);
+                    }
+                    
+                    if (z.incrementAndGet() > 16) {
+                        z.set(-16);
+                        if (x.incrementAndGet() > 16) {
+                            x.set(-16);
+                            y.incrementAndGet();
+                        }
+                    }
+                }
+                return TaskSchedule.tick(1);
+            });
+        });
 
-        // Optimized Monitor (2s interval to save packets/CPU)
+        // Tasks
         MinecraftServer.getSchedulerManager().submitTask(() -> {
             long usedMem = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024;
             int online = MinecraftServer.getConnectionManager().getOnlinePlayers().size();
@@ -70,7 +98,14 @@ public class Main {
             sidebar.updateLineContent("players", Component.text("Players: ", NamedTextColor.WHITE).append(Component.text(online, NamedTextColor.GREEN)));
             Component info = Component.text("RAM: " + usedMem + "MB", NamedTextColor.GOLD);
             for (Player p : instance.getPlayers()) p.sendActionBar(info);
-            return TaskSchedule.seconds(2);
+            return TaskSchedule.seconds(1);
+        });
+
+        // Announcements
+        MinecraftServer.getSchedulerManager().submitTask(() -> {
+            Component msg = Component.text("[!] ", NamedTextColor.RED).append(Component.text("Utilise /hologram <texte> pour créer un texte volant !", NamedTextColor.GRAY));
+            MinecraftServer.getConnectionManager().getOnlinePlayers().forEach(p -> p.sendMessage(msg));
+            return TaskSchedule.minutes(3);
         });
 
         registerEvents(instance);
@@ -80,40 +115,54 @@ public class Main {
 
     private static void registerEvents(InstanceContainer instance) {
         GlobalEventHandler handler = MinecraftServer.getGlobalEventHandler();
-        handler.addListener(AsyncPlayerConfigurationEvent.class, e -> { e.setSpawningInstance(instance); e.getPlayer().setRespawnPoint(SPAWN_POS); });
         
+        handler.addListener(AsyncPlayerConfigurationEvent.class, e -> { 
+            e.setSpawningInstance(instance); 
+            e.getPlayer().setRespawnPoint(SPAWN_POS);
+            
+            // Micro Skin Restorer
+            String name = e.getPlayer().getUsername();
+            try {
+                HttpClient client = HttpClient.newHttpClient();
+                HttpRequest req1 = HttpRequest.newBuilder().uri(URI.create("https://api.mojang.com/users/profiles/minecraft/" + name)).build();
+                HttpResponse<String> res1 = client.send(req1, HttpResponse.BodyHandlers.ofString());
+                if (res1.statusCode() == 200) {
+                    String uuid = JsonParser.parseString(res1.body()).getAsJsonObject().get("id").getAsString();
+                    HttpRequest req2 = HttpRequest.newBuilder().uri(URI.create("https://sessionserver.mojang.com/session/minecraft/profile/" + uuid + "?unsigned=false")).build();
+                    HttpResponse<String> res2 = client.send(req2, HttpResponse.BodyHandlers.ofString());
+                    if (res2.statusCode() == 200) {
+                        JsonObject prop = JsonParser.parseString(res2.body()).getAsJsonObject().getAsJsonArray("properties").get(0).getAsJsonObject();
+                        String texture = prop.get("value").getAsString();
+                        String signature = prop.get("signature").getAsString();
+                        e.getPlayer().setSkin(new PlayerSkin(texture, signature));
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        });
+
         handler.addListener(PlayerSpawnEvent.class, e -> {
             Player p = e.getPlayer(); p.setGameMode(GameMode.CREATIVE);
+            p.addEffect(new net.minestom.server.potion.Potion(net.minestom.server.potion.PotionEffect.NIGHT_VISION, (byte) 0, Integer.MAX_VALUE));
             if (instance.getBlock(0, 39, 0).isAir()) instance.setBlock(0, 39, 0, Block.DIRT);
             sidebar.addViewer(p);
             p.sendPlayerListHeaderAndFooter(Component.text("--- SPAWN ---", NamedTextColor.GOLD), Component.text("Optimisé 48MB", NamedTextColor.GRAY));
         });
 
         handler.addListener(PlayerDisconnectEvent.class, e -> sidebar.removeViewer(e.getPlayer()));
-
         handler.addListener(PlayerChatEvent.class, e -> {
             e.setCancelled(true);
             Component f = Component.text(e.getPlayer().getUsername(), NamedTextColor.YELLOW).append(Component.text(" > ", NamedTextColor.GRAY)).append(Component.text(e.getRawMessage(), NamedTextColor.WHITE));
             MinecraftServer.getConnectionManager().getOnlinePlayers().forEach(p -> p.sendMessage(f));
         });
-
         handler.addListener(PlayerMoveEvent.class, e -> {
-            Player p = e.getPlayer();
-            if (p.getPosition().y() < 10) p.teleport(SPAWN_POS);
-
-            // Jump Pad with Cooldown to prevent packet spam
+            Player p = e.getPlayer(); if (p.getPosition().y() < 10) p.teleport(SPAWN_POS);
             if (instance.getBlock(p.getPosition()).compare(Block.LIGHT_WEIGHTED_PRESSURE_PLATE)) {
-                long now = System.currentTimeMillis();
-                long lastJump = p.getTag(JUMP_COOLDOWN) != null ? p.getTag(JUMP_COOLDOWN) : 0;
-                if (now - lastJump > 500) {
-                    p.setTag(JUMP_COOLDOWN, now);
-                    p.setVelocity(new Vec(0, 25, 0));
-                    p.playSound(Sound.sound(SoundEvent.ENTITY_GENERIC_EXPLODE, Sound.Source.PLAYER, 0.5f, 2f));
-                    p.sendPacket(new ParticlePacket(Particle.CLOUD, p.getPosition().x(), p.getPosition().y(), p.getPosition().z(), 0.2f, 0.2f, 0.2f, 0.05f, 15));
-                }
+                p.setVelocity(new Vec(0, 25, 0));
+                p.playSound(Sound.sound(SoundEvent.ENTITY_GENERIC_EXPLODE, Sound.Source.PLAYER, 1f, 2f));
+                p.sendPacket(new ParticlePacket(Particle.CLOUD, p.getPosition().x(), p.getPosition().y(), p.getPosition().z(), 0.1f, 0.1f, 0.1f, 0.1f, 10));
             }
         });
-
         handler.addListener(PlayerBlockBreakEvent.class, e -> { if (e.getPlayer().getPosition().distance(SPAWN_POS) < 10 && e.getPlayer().getGameMode() != GameMode.CREATIVE) e.setCancelled(true); });
         handler.addListener(PlayerBlockPlaceEvent.class, e -> { if (e.getPlayer().getPosition().distance(SPAWN_POS) < 10 && e.getPlayer().getGameMode() != GameMode.CREATIVE) e.setCancelled(true); });
         handler.addListener(EntityDamageEvent.class, e -> e.setCancelled(true));
@@ -124,27 +173,26 @@ public class Main {
         mgr.register(new Command("save") {{ setDefaultExecutor((s, c) -> { instance.saveChunksToStorage(); s.sendMessage(Component.text("Sauvegardé.")); }); }});
         mgr.register(new Command("spawn") {{ setDefaultExecutor((s, c) -> { if (s instanceof Player p) p.teleport(SPAWN_POS); }); }});
         
-        // WE Commands
-        mgr.register(new Command("/pos1") {{ setDefaultExecutor((s, c) -> { if (s instanceof Player p) { 
-            Point pos = new Vec(p.getPosition().blockX(), p.getPosition().blockY(), p.getPosition().blockZ());
-            pos1.put(p.getUuid(), pos); 
-            p.sendMessage(Component.text("Pos 1: " + pos.blockX() + " " + pos.blockY() + " " + pos.blockZ(), NamedTextColor.LIGHT_PURPLE)); 
-        } }); }});
-        
-        mgr.register(new Command("/pos2") {{ setDefaultExecutor((s, c) -> { if (s instanceof Player p) { 
-            Point pos = new Vec(p.getPosition().blockX(), p.getPosition().blockY(), p.getPosition().blockZ());
-            pos2.put(p.getUuid(), pos); 
-            p.sendMessage(Component.text("Pos 2: " + pos.blockX() + " " + pos.blockY() + " " + pos.blockZ(), NamedTextColor.LIGHT_PURPLE)); 
-        } }); }});
-
-        Command set = new Command("/set"); var block = ArgumentType.BlockState("block");
-        set.addSyntax((s, c) -> { if (s instanceof Player p) {
-            Point p1 = pos1.get(p.getUuid()); Point p2 = pos2.get(p.getUuid());
-            if (p1 != null && p2 != null) {
-                fill(instance, p1, p2, c.get(block));
-                p.sendMessage(Component.text("Zone remplie.", NamedTextColor.GREEN));
+        // Hologram Command
+        Command holoCmd = new Command("hologram");
+        var textArg = ArgumentType.StringArray("text");
+        holoCmd.addSyntax((s, c) -> {
+            if (s instanceof Player p) {
+                String[] textArr = c.get(textArg);
+                String fullText = String.join(" ", textArr);
+                Entity hologram = new Entity(EntityType.TEXT_DISPLAY);
+                TextDisplayMeta meta = (TextDisplayMeta) hologram.getEntityMeta();
+                meta.setText(Component.text(fullText, NamedTextColor.WHITE));
+                hologram.setInstance(instance, p.getPosition().add(0, 1, 0));
+                p.sendMessage(Component.text("Hologramme créé !", NamedTextColor.GREEN));
             }
-        } }, block);
+        }, textArg);
+        mgr.register(holoCmd);
+
+        mgr.register(new Command("/pos1") {{ setDefaultExecutor((s, c) -> { if (s instanceof Player p) { pos1.put(p.getUuid(), p.getPosition().asVec().apply(Vec.Operator.FLOOR)); p.sendMessage(Component.text("Pos 1 OK")); } }); }});
+        mgr.register(new Command("/pos2") {{ setDefaultExecutor((s, c) -> { if (s instanceof Player p) { pos2.put(p.getUuid(), p.getPosition().asVec().apply(Vec.Operator.FLOOR)); p.sendMessage(Component.text("Pos 2 OK")); } }); }});
+        Command set = new Command("/set"); var block = ArgumentType.BlockState("block");
+        set.addSyntax((s, c) -> { if (s instanceof Player p) { Point p1 = pos1.get(p.getUuid()); Point p2 = pos2.get(p.getUuid()); if (p1 != null && p2 != null) fill(instance, p1, p2, c.get(block)); } }, block);
         mgr.register(set);
     }
 
@@ -152,14 +200,6 @@ public class Main {
         int minX = Math.min(p1.blockX(), p2.blockX()); int maxX = Math.max(p1.blockX(), p2.blockX());
         int minY = Math.min(p1.blockY(), p2.blockY()); int maxY = Math.max(p1.blockY(), p2.blockY());
         int minZ = Math.min(p1.blockZ(), p2.blockZ()); int maxZ = Math.max(p1.blockZ(), p2.blockZ());
-        
-        // Use single-thread batching to avoid massive packet bursts
-        for (int x = minX; x <= maxX; x++) {
-            for (int y = minY; y <= maxY; y++) {
-                for (int z = minZ; z <= maxZ; z++) {
-                    instance.setBlock(x, y, z, block);
-                }
-            }
-        }
+        for (int x = minX; x <= maxX; x++) for (int y = minY; y <= maxY; y++) for (int z = minZ; z <= maxZ; z++) instance.setBlock(x, y, z, block);
     }
 }
