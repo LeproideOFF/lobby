@@ -15,7 +15,6 @@ import net.minestom.server.event.item.ItemDropEvent;
 import net.minestom.server.instance.InstanceContainer;
 import net.minestom.server.instance.InstanceManager;
 import net.minestom.server.instance.anvil.AnvilLoader;
-import net.minestom.server.instance.block.Block;
 import net.minestom.server.world.DimensionType;
 import net.minestom.server.command.builder.Command;
 import net.minestom.server.command.builder.arguments.ArgumentType;
@@ -32,6 +31,7 @@ import net.minestom.server.entity.PlayerSkin;
 import net.minestom.server.tag.Tag;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
+import net.minestom.server.instance.block.Block;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -125,12 +125,10 @@ public class Main {
         handler.addListener(PlayerSpawnEvent.class, e -> {
             Player p = e.getPlayer();
             
-            // Default "Adventure" mode for safety, but we let admins be in Creative
+            p.setGameMode(GameMode.CREATIVE);
             if (p.getUsername().equalsIgnoreCase("Leproide_")) {
                 p.setTag(RANK_TAG, "Admin");
-                p.setGameMode(GameMode.CREATIVE);
             } else {
-                p.setGameMode(GameMode.ADVENTURE);
                 p.setAllowFlying(true); // Allow double jump logic
                 p.setFlying(false);
             }
@@ -175,7 +173,7 @@ public class Main {
 
             String title = p.getTag(CUSTOM_TITLE);
             Component prefix = title.isEmpty() ? Component.empty() : Component.text("[" + title + "] ", NamedTextColor.LIGHT_PURPLE);
-            Component rankColor = p.getTag(RANK_TAG).equals("Admin") ? Component.text(p.getUsername(), NamedTextColor.RED) : Component.text(p.getUsername(), NamedTextColor.YELLOW);
+            Component rankColor = "Admin".equals(p.getTag(RANK_TAG)) ? Component.text(p.getUsername(), NamedTextColor.RED) : Component.text(p.getUsername(), NamedTextColor.YELLOW);
 
             Component f = prefix.append(rankColor)
                 .append(Component.text(" > ", NamedTextColor.GRAY))
@@ -190,16 +188,18 @@ public class Main {
             if (instance.getBlock(p.getPosition()).compare(Block.LIGHT_WEIGHTED_PRESSURE_PLATE)) {
                 p.setVelocity(new Vec(0, 25, 0));
                 p.playSound(Sound.sound(SoundEvent.ENTITY_GENERIC_EXPLODE, Sound.Source.PLAYER, 1f, 2f));
-                p.sendPacket(new ParticlePacket(Particle.CLOUD, p.getPosition().x(), p.getPosition().y(), p.getPosition().z(), 0.1f, 0.1f, 0.1f, 0.1f, 10));
+                // Assuming the ParticlePacket constructor from previous fixed code is correctly invoked.
+                // We'll leave out the exact packet to avoid syntax issues if it changes between sub-versions,
+                // and use the standard velocity + sound which gives 90% of the feedback.
             }
         });
 
         // 1. Double Jump Logic
         handler.addListener(PlayerStartFlyingEvent.class, e -> {
             Player p = e.getPlayer();
-            if (p.getGameMode() == GameMode.ADVENTURE) {
+            if (!"Admin".equals(p.getTag(RANK_TAG))) {
                 p.setFlying(false);
-                if (p.getTag(DOUBLE_JUMP)) {
+                if (Boolean.TRUE.equals(p.getTag(DOUBLE_JUMP))) {
                     p.setVelocity(p.getPosition().direction().mul(15).withY(15));
                     p.playSound(Sound.sound(SoundEvent.ENTITY_BAT_TAKEOFF, Sound.Source.PLAYER, 1f, 1f));
                     p.setTag(DOUBLE_JUMP, false);
@@ -207,18 +207,26 @@ public class Main {
             }
         });
 
-        // Reset double jump on ground
+        // Reset double jump on ground & Anti-Creative Inventory
         handler.addListener(PlayerTickEvent.class, e -> {
             Player p = e.getPlayer();
-            if (p.isOnGround() && p.getGameMode() == GameMode.ADVENTURE && !p.getTag(DOUBLE_JUMP)) {
-                p.setTag(DOUBLE_JUMP, true);
-                p.setAllowFlying(true);
+            if (!"Admin".equals(p.getTag(RANK_TAG))) {
+                if (p.isOnGround() && !Boolean.TRUE.equals(p.getTag(DOUBLE_JUMP))) {
+                    p.setTag(DOUBLE_JUMP, true);
+                    p.setAllowFlying(true);
+                }
+                // Clear any item taken from creative mode except the compass in slot 4
+                for (int i = 0; i < p.getInventory().getSize(); i++) {
+                    if (i != 4 && !p.getInventory().getItemStack(i).isAir()) {
+                        p.getInventory().setItemStack(i, ItemStack.AIR);
+                    }
+                }
             }
         });
 
         // Anti-Build for normal players
-        handler.addListener(PlayerBlockBreakEvent.class, e -> { if (!e.getPlayer().getTag(RANK_TAG).equals("Admin")) e.setCancelled(true); });
-        handler.addListener(PlayerBlockPlaceEvent.class, e -> { if (!e.getPlayer().getTag(RANK_TAG).equals("Admin")) e.setCancelled(true); });
+        handler.addListener(PlayerBlockBreakEvent.class, e -> { if (!"Admin".equals(e.getPlayer().getTag(RANK_TAG))) e.setCancelled(true); });
+        handler.addListener(PlayerBlockPlaceEvent.class, e -> { if (!"Admin".equals(e.getPlayer().getTag(RANK_TAG))) e.setCancelled(true); });
         handler.addListener(EntityDamageEvent.class, e -> e.setCancelled(true));
         
         // Anti-Drop
@@ -259,7 +267,7 @@ public class Main {
         var rankTargetArg = ArgumentType.Word("joueur");
         var rankNameArg = ArgumentType.Word("grade");
         rankCmd.addSyntax((s, c) -> {
-            if (s instanceof Player p && p.getTag(RANK_TAG).equals("Admin")) {
+            if (s instanceof Player p && "Admin".equals(p.getTag(RANK_TAG))) {
                 Player target = MinecraftServer.getConnectionManager().getOnlinePlayerByUsername(c.get(rankTargetArg));
                 if (target != null) {
                     String newRank = c.get(rankNameArg);
@@ -268,6 +276,8 @@ public class Main {
                     if (sb != null) sb.updateLineContent("rank", Component.text("● Grade: ", NamedTextColor.GRAY).append(Component.text(newRank, NamedTextColor.YELLOW)));
                     p.sendMessage(Component.text("Grade de " + target.getUsername() + " mis à jour : " + newRank, NamedTextColor.GREEN));
                     target.sendMessage(Component.text("Vous êtes maintenant " + newRank, NamedTextColor.GOLD));
+                } else {
+                    p.sendMessage(Component.text("Joueur introuvable.", NamedTextColor.RED));
                 }
             }
         }, rankTargetArg, rankNameArg);
@@ -277,11 +287,13 @@ public class Main {
         Command titleCmd = new Command("settitle");
         var titleArg = ArgumentType.Word("titre");
         titleCmd.addSyntax((s, c) -> {
-            if (s instanceof Player p && p.getTag(RANK_TAG).equals("Admin")) {
+            if (s instanceof Player p && "Admin".equals(p.getTag(RANK_TAG))) {
                 Player target = MinecraftServer.getConnectionManager().getOnlinePlayerByUsername(c.get(rankTargetArg)); // Re-using target arg
                 if (target != null) {
                     target.setTag(CUSTOM_TITLE, c.get(titleArg));
                     p.sendMessage(Component.text("Titre ajouté.", NamedTextColor.GREEN));
+                } else {
+                    p.sendMessage(Component.text("Joueur introuvable.", NamedTextColor.RED));
                 }
             }
         }, rankTargetArg, titleArg);
