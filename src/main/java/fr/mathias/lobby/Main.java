@@ -42,8 +42,8 @@ public class Main {
     private static Sidebar sidebar;
 
     public static void main(String[] args) {
-        System.setProperty("minestom.chunk-view-distance", "8");
-        System.setProperty("minestom.entity-view-distance", "2");
+        System.setProperty("minestom.chunk-view-distance", "4");
+        System.setProperty("minestom.entity-view-distance", "1");
 
         MinecraftServer server = MinecraftServer.init();
         InstanceManager instanceManager = MinecraftServer.getInstanceManager();
