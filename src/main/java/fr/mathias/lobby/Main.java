@@ -25,7 +25,6 @@ import net.minestom.server.network.packet.server.play.ParticlePacket;
 import net.minestom.server.particle.Particle;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.sound.Sound;
 import net.minestom.server.sound.SoundEvent;
 import net.minestom.server.entity.PlayerSkin;
@@ -39,12 +38,11 @@ import java.net.http.HttpResponse;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
     private static final Map<UUID, Point> pos1 = new HashMap<>();
     private static final Map<UUID, Point> pos2 = new HashMap<>();
-    private static final Pos SPAWN_POS = new Pos(0.5, 40, 0.5);
+    private static final Pos SPAWN_POS = new Pos(0.5, 99, 0.5);
     private static Sidebar sidebar;
 
     public static void main(String[] args) {
@@ -55,40 +53,13 @@ public class Main {
         InstanceManager instanceManager = MinecraftServer.getInstanceManager();
         InstanceContainer instance = instanceManager.createInstanceContainer(DimensionType.OVERWORLD);
         
-        instance.setChunkLoader(new AnvilLoader("world"));
+        instance.setChunkLoader(new AnvilLoader("world/dimensions/minecraft/overworld"));
         instance.setGenerator(unit -> {});
 
         // Scoreboard
         sidebar = new Sidebar(Component.text("--- INFOS ---", NamedTextColor.GOLD));
         sidebar.createLine(new Sidebar.ScoreboardLine("ram", Component.text("RAM: ..."), 1));
         sidebar.createLine(new Sidebar.ScoreboardLine("players", Component.text("Players: ..."), 0));
-
-        // Block updater task
-        instance.loadChunk(0, 0).thenAccept(chunk -> {
-            AtomicInteger x = new AtomicInteger(-16);
-            AtomicInteger y = new AtomicInteger(30);
-            AtomicInteger z = new AtomicInteger(-16);
-            
-            MinecraftServer.getSchedulerManager().submitTask(() -> {
-                for (int i = 0; i < 50; i++) {
-                    if (y.get() > 50) return TaskSchedule.stop();
-                    
-                    Block b = instance.getBlock(x.get(), y.get(), z.get());
-                    if (!b.isAir()) {
-                        instance.setBlock(x.get(), y.get(), z.get(), b);
-                    }
-                    
-                    if (z.incrementAndGet() > 16) {
-                        z.set(-16);
-                        if (x.incrementAndGet() > 16) {
-                            x.set(-16);
-                            y.incrementAndGet();
-                        }
-                    }
-                }
-                return TaskSchedule.tick(1);
-            });
-        });
 
         // Tasks
         MinecraftServer.getSchedulerManager().submitTask(() -> {

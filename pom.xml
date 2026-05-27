@@ -50,7 +50,7 @@
                         <argument>-Xms48M</argument>
                         <argument>-Xmx48M</argument>
                         <argument>-XX:+UseSerialGC</argument>
-                        <argument>-XX:MaxMetaspaceSize=32M</argument>
+                        <argument>-XX:MaxMetaspaceSize=40M</argument>
                         <argument>-XX:CompressedClassSpaceSize=12M</argument>
                         <argument>-Xss256k</argument>
                         <argument>-XX:MaxDirectMemorySize=16M</argument>
