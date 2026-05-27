@@ -35,10 +35,13 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.UUID;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class Main {
     private static final Pos SPAWN_POS = new Pos(0.5, 99, 0.5);
-    private static Sidebar sidebar;
+    private static final Map<UUID, Sidebar> sidebars = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
         System.setProperty("minestom.chunk-view-distance", "4");
@@ -51,25 +54,26 @@ public class Main {
         instance.setChunkLoader(new AnvilLoader("world/dimensions/minecraft/overworld"));
         instance.setGenerator(unit -> {});
 
-        // Scoreboard
-        sidebar = new Sidebar(Component.text("--- INFOS ---", NamedTextColor.GOLD));
-        sidebar.createLine(new Sidebar.ScoreboardLine("ram", Component.text("RAM: ..."), 1));
-        sidebar.createLine(new Sidebar.ScoreboardLine("players", Component.text("Players: ..."), 0));
-
-        // Tasks
+        // Tasks - Mise à jour du scoreboard (joueurs en ligne) et Action Bar (RAM)
         MinecraftServer.getSchedulerManager().submitTask(() -> {
-            long usedMem = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024;
             int online = MinecraftServer.getConnectionManager().getOnlinePlayers().size();
-            sidebar.updateLineContent("ram", Component.text("RAM: ", NamedTextColor.WHITE).append(Component.text(usedMem + "MB", NamedTextColor.AQUA)));
-            sidebar.updateLineContent("players", Component.text("Players: ", NamedTextColor.WHITE).append(Component.text(online, NamedTextColor.GREEN)));
-            Component info = Component.text("RAM: " + usedMem + "MB", NamedTextColor.GOLD);
-            for (Player p : instance.getPlayers()) p.sendActionBar(info);
+            long usedMem = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024;
+            Component ramInfo = Component.text("RAM: " + usedMem + "MB", NamedTextColor.GOLD, TextDecoration.BOLD);
+
+            for (Player p : instance.getPlayers()) {
+                p.sendActionBar(ramInfo);
+                Sidebar sb = sidebars.get(p.getUuid());
+                if (sb != null) {
+                    sb.updateLineContent("players", Component.text("● Joueurs: ", NamedTextColor.GRAY).append(Component.text(online, NamedTextColor.GREEN)));
+                    sb.updateLineContent("ping", Component.text("● Ping: ", NamedTextColor.GRAY).append(Component.text(p.getLatency() + "ms", NamedTextColor.GREEN)));
+                }
+            }
             return TaskSchedule.seconds(2);
         });
 
         // Announcements
         MinecraftServer.getSchedulerManager().submitTask(() -> {
-            Component msg = Component.text("[!] ", NamedTextColor.RED).append(Component.text("Utilise /hologram <texte> pour créer un texte volant !", NamedTextColor.GRAY));
+            Component msg = Component.text("[Forgium] ", NamedTextColor.GOLD).append(Component.text("Rejoignez notre Discord : discord.gg/forgium", NamedTextColor.YELLOW));
             MinecraftServer.getConnectionManager().getOnlinePlayers().forEach(p -> p.sendMessage(msg));
             return TaskSchedule.minutes(3);
         });
@@ -111,16 +115,36 @@ public class Main {
             Player p = e.getPlayer(); p.setGameMode(GameMode.CREATIVE);
             p.addEffect(new net.minestom.server.potion.Potion(net.minestom.server.potion.PotionEffect.NIGHT_VISION, (byte) 0, Integer.MAX_VALUE));
             if (instance.getBlock(0, 39, 0).isAir()) instance.setBlock(0, 39, 0, Block.DIRT);
-            sidebar.addViewer(p);
-            p.sendPlayerListHeaderAndFooter(Component.text("--- SPAWN ---", NamedTextColor.GOLD), Component.text("Optimisé 48MB", NamedTextColor.GRAY));
+            
+            // Personnalisation Forgium Network
+            Sidebar sb = new Sidebar(Component.text("FORGIUM", NamedTextColor.GOLD, TextDecoration.BOLD));
+            sb.createLine(new Sidebar.ScoreboardLine("space1", Component.text(" "), 7));
+            sb.createLine(new Sidebar.ScoreboardLine("pseudo", Component.text("● Profil: ", NamedTextColor.GRAY).append(Component.text(p.getUsername(), NamedTextColor.AQUA)), 6));
+            sb.createLine(new Sidebar.ScoreboardLine("rank", Component.text("● Grade: ", NamedTextColor.GRAY).append(Component.text("Joueur", NamedTextColor.GRAY)), 5));
+            sb.createLine(new Sidebar.ScoreboardLine("space2", Component.text("  "), 4));
+            sb.createLine(new Sidebar.ScoreboardLine("players", Component.text("● Joueurs: ", NamedTextColor.GRAY).append(Component.text("1", NamedTextColor.GREEN)), 3));
+            sb.createLine(new Sidebar.ScoreboardLine("ping", Component.text("● Ping: ", NamedTextColor.GRAY).append(Component.text("0ms", NamedTextColor.GREEN)), 2));
+            sb.createLine(new Sidebar.ScoreboardLine("space3", Component.text("   "), 1));
+            sb.createLine(new Sidebar.ScoreboardLine("ip", Component.text("play.forgium.fr", NamedTextColor.YELLOW), 0));
+            sb.addViewer(p);
+            sidebars.put(p.getUuid(), sb);
+            
+            p.sendPlayerListHeaderAndFooter(
+                Component.text("\nFORGIUM NETWORK\n", NamedTextColor.GOLD, TextDecoration.BOLD), 
+                Component.text("\nplay.forgium.fr\ndiscord.gg/forgium\n", NamedTextColor.YELLOW)
+            );
         });
 
-        handler.addListener(PlayerDisconnectEvent.class, e -> sidebar.removeViewer(e.getPlayer()));
+        handler.addListener(PlayerDisconnectEvent.class, e -> sidebars.remove(e.getPlayer().getUuid()));
+        
         handler.addListener(PlayerChatEvent.class, e -> {
             e.setCancelled(true);
-            Component f = Component.text(e.getPlayer().getUsername(), NamedTextColor.YELLOW).append(Component.text(" > ", NamedTextColor.GRAY)).append(Component.text(e.getRawMessage(), NamedTextColor.WHITE));
+            Component f = Component.text(e.getPlayer().getUsername(), NamedTextColor.YELLOW)
+                .append(Component.text(" > ", NamedTextColor.GRAY))
+                .append(Component.text(e.getRawMessage(), NamedTextColor.WHITE));
             MinecraftServer.getConnectionManager().getOnlinePlayers().forEach(p -> p.sendMessage(f));
         });
+        
         handler.addListener(PlayerMoveEvent.class, e -> {
             Player p = e.getPlayer(); if (p.getPosition().y() < 10) p.teleport(SPAWN_POS);
             if (instance.getBlock(p.getPosition()).compare(Block.LIGHT_WEIGHTED_PRESSURE_PLATE)) {
@@ -129,6 +153,7 @@ public class Main {
                 p.sendPacket(new ParticlePacket(Particle.CLOUD, p.getPosition().x(), p.getPosition().y(), p.getPosition().z(), 0.1f, 0.1f, 0.1f, 0.1f, 10));
             }
         });
+        
         handler.addListener(PlayerBlockBreakEvent.class, e -> { if (e.getPlayer().getPosition().distance(SPAWN_POS) < 10 && e.getPlayer().getGameMode() != GameMode.CREATIVE) e.setCancelled(true); });
         handler.addListener(PlayerBlockPlaceEvent.class, e -> { if (e.getPlayer().getPosition().distance(SPAWN_POS) < 10 && e.getPlayer().getGameMode() != GameMode.CREATIVE) e.setCancelled(true); });
         handler.addListener(EntityDamageEvent.class, e -> e.setCancelled(true));
