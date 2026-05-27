@@ -11,6 +11,7 @@ import net.minestom.server.entity.metadata.display.TextDisplayMeta;
 import net.minestom.server.event.GlobalEventHandler;
 import net.minestom.server.event.entity.EntityDamageEvent;
 import net.minestom.server.event.player.*;
+import net.minestom.server.event.item.ItemDropEvent;
 import net.minestom.server.instance.InstanceContainer;
 import net.minestom.server.instance.InstanceManager;
 import net.minestom.server.instance.anvil.AnvilLoader;
@@ -28,6 +29,9 @@ import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.sound.Sound;
 import net.minestom.server.sound.SoundEvent;
 import net.minestom.server.entity.PlayerSkin;
+import net.minestom.server.tag.Tag;
+import net.minestom.server.item.ItemStack;
+import net.minestom.server.item.Material;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -42,6 +46,11 @@ import java.util.concurrent.ConcurrentHashMap;
 public class Main {
     private static final Pos SPAWN_POS = new Pos(0.5, 99, 0.5);
     private static final Map<UUID, Sidebar> sidebars = new ConcurrentHashMap<>();
+    
+    // Tags for memory-efficient data storage
+    private static final Tag<String> RANK_TAG = Tag.String("rank").defaultValue("Joueur");
+    private static final Tag<Boolean> DOUBLE_JUMP = Tag.Boolean("dj").defaultValue(true);
+    private static final Tag<String> CUSTOM_TITLE = Tag.String("title").defaultValue("");
 
     public static void main(String[] args) {
         System.setProperty("minestom.chunk-view-distance", "4");
@@ -54,7 +63,13 @@ public class Main {
         instance.setChunkLoader(new AnvilLoader("world/dimensions/minecraft/overworld"));
         instance.setGenerator(unit -> {});
 
-        // Tasks - Mise à jour du scoreboard (joueurs en ligne) et Action Bar (RAM)
+        // Hologram
+        Entity hologram = new Entity(EntityType.TEXT_DISPLAY);
+        TextDisplayMeta meta = (TextDisplayMeta) hologram.getEntityMeta();
+        meta.setText(Component.text("BIENVENUE SUR FORGIUM", NamedTextColor.GOLD, TextDecoration.BOLD));
+        hologram.setInstance(instance, new Pos(0.5, 101, 0.5));
+
+        // Background Tasks
         MinecraftServer.getSchedulerManager().submitTask(() -> {
             int online = MinecraftServer.getConnectionManager().getOnlinePlayers().size();
             long usedMem = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024;
@@ -71,7 +86,6 @@ public class Main {
             return TaskSchedule.seconds(2);
         });
 
-        // Announcements
         MinecraftServer.getSchedulerManager().submitTask(() -> {
             Component msg = Component.text("[Forgium] ", NamedTextColor.GOLD).append(Component.text("Rejoignez notre Discord : discord.gg/forgium", NamedTextColor.YELLOW));
             MinecraftServer.getConnectionManager().getOnlinePlayers().forEach(p -> p.sendMessage(msg));
@@ -102,25 +116,36 @@ public class Main {
                     HttpResponse<String> res2 = client.send(req2, HttpResponse.BodyHandlers.ofString());
                     if (res2.statusCode() == 200) {
                         JsonObject prop = JsonParser.parseString(res2.body()).getAsJsonObject().getAsJsonArray("properties").get(0).getAsJsonObject();
-                        String texture = prop.get("value").getAsString();
-                        String signature = prop.get("signature").getAsString();
-                        e.getPlayer().setSkin(new PlayerSkin(texture, signature));
+                        e.getPlayer().setSkin(new PlayerSkin(prop.get("value").getAsString(), prop.get("signature").getAsString()));
                     }
                 }
-            } catch (Exception ignored) {
-            }
+            } catch (Exception ignored) {}
         });
 
         handler.addListener(PlayerSpawnEvent.class, e -> {
-            Player p = e.getPlayer(); p.setGameMode(GameMode.CREATIVE);
-            p.addEffect(new net.minestom.server.potion.Potion(net.minestom.server.potion.PotionEffect.NIGHT_VISION, (byte) 0, Integer.MAX_VALUE));
-            if (instance.getBlock(0, 39, 0).isAir()) instance.setBlock(0, 39, 0, Block.DIRT);
+            Player p = e.getPlayer();
             
-            // Personnalisation Forgium Network
+            // Default "Adventure" mode for safety, but we let admins be in Creative
+            if (p.getUsername().equalsIgnoreCase("Leproide_")) {
+                p.setTag(RANK_TAG, "Admin");
+                p.setGameMode(GameMode.CREATIVE);
+            } else {
+                p.setGameMode(GameMode.ADVENTURE);
+                p.setAllowFlying(true); // Allow double jump logic
+                p.setFlying(false);
+            }
+            
+            p.addEffect(new net.minestom.server.potion.Potion(net.minestom.server.potion.PotionEffect.NIGHT_VISION, (byte) 0, Integer.MAX_VALUE));
+            
+            // 9. Compass Selector
+            ItemStack compass = ItemStack.of(Material.COMPASS).withCustomName(Component.text("Sélecteur de Serveur", NamedTextColor.GOLD));
+            p.getInventory().setItemStack(4, compass);
+
+            // Sidebar
             Sidebar sb = new Sidebar(Component.text("FORGIUM", NamedTextColor.GOLD, TextDecoration.BOLD));
             sb.createLine(new Sidebar.ScoreboardLine("space1", Component.text(" "), 7));
             sb.createLine(new Sidebar.ScoreboardLine("pseudo", Component.text("● Profil: ", NamedTextColor.GRAY).append(Component.text(p.getUsername(), NamedTextColor.AQUA)), 6));
-            sb.createLine(new Sidebar.ScoreboardLine("rank", Component.text("● Grade: ", NamedTextColor.GRAY).append(Component.text("Joueur", NamedTextColor.GRAY)), 5));
+            sb.createLine(new Sidebar.ScoreboardLine("rank", Component.text("● Grade: ", NamedTextColor.GRAY).append(Component.text(p.getTag(RANK_TAG), NamedTextColor.YELLOW)), 5));
             sb.createLine(new Sidebar.ScoreboardLine("space2", Component.text("  "), 4));
             sb.createLine(new Sidebar.ScoreboardLine("players", Component.text("● Joueurs: ", NamedTextColor.GRAY).append(Component.text("1", NamedTextColor.GREEN)), 3));
             sb.createLine(new Sidebar.ScoreboardLine("ping", Component.text("● Ping: ", NamedTextColor.GRAY).append(Component.text("0ms", NamedTextColor.GREEN)), 2));
@@ -139,45 +164,127 @@ public class Main {
         
         handler.addListener(PlayerChatEvent.class, e -> {
             e.setCancelled(true);
-            Component f = Component.text(e.getPlayer().getUsername(), NamedTextColor.YELLOW)
+            Player p = e.getPlayer();
+            String msg = e.getRawMessage();
+            
+            // 76. Easter Egg Forgium Glow
+            if (msg.toLowerCase().contains("forgium")) {
+                p.setGlowing(true);
+                MinecraftServer.getSchedulerManager().buildTask(() -> p.setGlowing(false)).delay(TaskSchedule.seconds(2)).schedule();
+            }
+
+            String title = p.getTag(CUSTOM_TITLE);
+            Component prefix = title.isEmpty() ? Component.empty() : Component.text("[" + title + "] ", NamedTextColor.LIGHT_PURPLE);
+            Component rankColor = p.getTag(RANK_TAG).equals("Admin") ? Component.text(p.getUsername(), NamedTextColor.RED) : Component.text(p.getUsername(), NamedTextColor.YELLOW);
+
+            Component f = prefix.append(rankColor)
                 .append(Component.text(" > ", NamedTextColor.GRAY))
-                .append(Component.text(e.getRawMessage(), NamedTextColor.WHITE));
-            MinecraftServer.getConnectionManager().getOnlinePlayers().forEach(p -> p.sendMessage(f));
+                .append(Component.text(msg, NamedTextColor.WHITE));
+            MinecraftServer.getConnectionManager().getOnlinePlayers().forEach(pl -> pl.sendMessage(f));
         });
         
         handler.addListener(PlayerMoveEvent.class, e -> {
-            Player p = e.getPlayer(); if (p.getPosition().y() < 10) p.teleport(SPAWN_POS);
+            Player p = e.getPlayer(); 
+            if (p.getPosition().y() < 10) p.teleport(SPAWN_POS);
+
             if (instance.getBlock(p.getPosition()).compare(Block.LIGHT_WEIGHTED_PRESSURE_PLATE)) {
                 p.setVelocity(new Vec(0, 25, 0));
                 p.playSound(Sound.sound(SoundEvent.ENTITY_GENERIC_EXPLODE, Sound.Source.PLAYER, 1f, 2f));
                 p.sendPacket(new ParticlePacket(Particle.CLOUD, p.getPosition().x(), p.getPosition().y(), p.getPosition().z(), 0.1f, 0.1f, 0.1f, 0.1f, 10));
             }
         });
-        
-        handler.addListener(PlayerBlockBreakEvent.class, e -> { if (e.getPlayer().getPosition().distance(SPAWN_POS) < 10 && e.getPlayer().getGameMode() != GameMode.CREATIVE) e.setCancelled(true); });
-        handler.addListener(PlayerBlockPlaceEvent.class, e -> { if (e.getPlayer().getPosition().distance(SPAWN_POS) < 10 && e.getPlayer().getGameMode() != GameMode.CREATIVE) e.setCancelled(true); });
+
+        // 1. Double Jump Logic
+        handler.addListener(PlayerStartFlyingEvent.class, e -> {
+            Player p = e.getPlayer();
+            if (p.getGameMode() == GameMode.ADVENTURE) {
+                p.setFlying(false);
+                if (p.getTag(DOUBLE_JUMP)) {
+                    p.setVelocity(p.getPosition().direction().mul(15).withY(15));
+                    p.playSound(Sound.sound(SoundEvent.ENTITY_BAT_TAKEOFF, Sound.Source.PLAYER, 1f, 1f));
+                    p.setTag(DOUBLE_JUMP, false);
+                }
+            }
+        });
+
+        // Reset double jump on ground
+        handler.addListener(PlayerTickEvent.class, e -> {
+            Player p = e.getPlayer();
+            if (p.isOnGround() && p.getGameMode() == GameMode.ADVENTURE && !p.getTag(DOUBLE_JUMP)) {
+                p.setTag(DOUBLE_JUMP, true);
+                p.setAllowFlying(true);
+            }
+        });
+
+        // Anti-Build for normal players
+        handler.addListener(PlayerBlockBreakEvent.class, e -> { if (!e.getPlayer().getTag(RANK_TAG).equals("Admin")) e.setCancelled(true); });
+        handler.addListener(PlayerBlockPlaceEvent.class, e -> { if (!e.getPlayer().getTag(RANK_TAG).equals("Admin")) e.setCancelled(true); });
         handler.addListener(EntityDamageEvent.class, e -> e.setCancelled(true));
+        
+        // Anti-Drop
+        handler.addListener(ItemDropEvent.class, e -> e.setCancelled(true));
+        
+        // 9. Compass interact
+        handler.addListener(PlayerUseItemEvent.class, e -> {
+            if (e.getItemStack().material() == Material.COMPASS) {
+                e.getPlayer().sendMessage(Component.text("Ouverture du menu des serveurs... (Bientôt)", NamedTextColor.AQUA));
+            }
+        });
     }
 
     private static void registerCommands(InstanceContainer instance) {
         var mgr = MinecraftServer.getCommandManager();
-        mgr.register(new Command("save") {{ setDefaultExecutor((s, c) -> { instance.saveChunksToStorage(); s.sendMessage(Component.text("Sauvegardé.")); }); }});
         mgr.register(new Command("spawn") {{ setDefaultExecutor((s, c) -> { if (s instanceof Player p) p.teleport(SPAWN_POS); }); }});
         
-        // Hologram Command
-        Command holoCmd = new Command("hologram");
-        var textArg = ArgumentType.StringArray("text");
-        holoCmd.addSyntax((s, c) -> {
-            if (s instanceof Player p) {
-                String[] textArr = c.get(textArg);
-                String fullText = String.join(" ", textArr);
-                Entity hologram = new Entity(EntityType.TEXT_DISPLAY);
-                TextDisplayMeta meta = (TextDisplayMeta) hologram.getEntityMeta();
-                meta.setText(Component.text(fullText, NamedTextColor.WHITE));
-                hologram.setInstance(instance, p.getPosition().add(0, 1, 0));
-                p.sendMessage(Component.text("Hologramme créé !", NamedTextColor.GREEN));
+        // 31. Private Messages (/msg)
+        Command msgCmd = new Command("msg");
+        var targetArg = ArgumentType.Word("joueur");
+        var msgArg = ArgumentType.StringArray("message");
+        msgCmd.addSyntax((s, c) -> {
+            if (s instanceof Player sender) {
+                Player target = MinecraftServer.getConnectionManager().getOnlinePlayerByUsername(c.get(targetArg));
+                if (target != null) {
+                    String m = String.join(" ", c.get(msgArg));
+                    sender.sendMessage(Component.text("Moi -> " + target.getUsername() + " : " + m, NamedTextColor.GRAY));
+                    target.sendMessage(Component.text(sender.getUsername() + " -> Moi : " + m, NamedTextColor.LIGHT_PURPLE));
+                } else {
+                    sender.sendMessage(Component.text("Joueur introuvable.", NamedTextColor.RED));
+                }
             }
-        }, textArg);
-        mgr.register(holoCmd);
+        }, targetArg, msgArg);
+        mgr.register(msgCmd);
+
+        // Admin command to set ranks
+        Command rankCmd = new Command("setrank");
+        var rankTargetArg = ArgumentType.Word("joueur");
+        var rankNameArg = ArgumentType.Word("grade");
+        rankCmd.addSyntax((s, c) -> {
+            if (s instanceof Player p && p.getTag(RANK_TAG).equals("Admin")) {
+                Player target = MinecraftServer.getConnectionManager().getOnlinePlayerByUsername(c.get(rankTargetArg));
+                if (target != null) {
+                    String newRank = c.get(rankNameArg);
+                    target.setTag(RANK_TAG, newRank);
+                    Sidebar sb = sidebars.get(target.getUuid());
+                    if (sb != null) sb.updateLineContent("rank", Component.text("● Grade: ", NamedTextColor.GRAY).append(Component.text(newRank, NamedTextColor.YELLOW)));
+                    p.sendMessage(Component.text("Grade de " + target.getUsername() + " mis à jour : " + newRank, NamedTextColor.GREEN));
+                    target.sendMessage(Component.text("Vous êtes maintenant " + newRank, NamedTextColor.GOLD));
+                }
+            }
+        }, rankTargetArg, rankNameArg);
+        mgr.register(rankCmd);
+        
+        // 18. Custom Title Command
+        Command titleCmd = new Command("settitle");
+        var titleArg = ArgumentType.Word("titre");
+        titleCmd.addSyntax((s, c) -> {
+            if (s instanceof Player p && p.getTag(RANK_TAG).equals("Admin")) {
+                Player target = MinecraftServer.getConnectionManager().getOnlinePlayerByUsername(c.get(rankTargetArg)); // Re-using target arg
+                if (target != null) {
+                    target.setTag(CUSTOM_TITLE, c.get(titleArg));
+                    p.sendMessage(Component.text("Titre ajouté.", NamedTextColor.GREEN));
+                }
+            }
+        }, rankTargetArg, titleArg);
+        mgr.register(titleCmd);
     }
 }
