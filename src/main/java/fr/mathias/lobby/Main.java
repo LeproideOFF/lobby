@@ -8,8 +8,8 @@ import net.minestom.server.entity.Player;
 import net.minestom.server.entity.Entity;
 import net.minestom.server.entity.EntityType;
 import net.minestom.server.entity.metadata.display.TextDisplayMeta;
-import net.minestom.server.entity.metadata.PlayerMeta;
 import net.minestom.server.event.GlobalEventHandler;
+
 import net.minestom.server.event.entity.EntityDamageEvent;
 import net.minestom.server.event.player.*;
 import net.minestom.server.event.item.ItemDropEvent;
@@ -22,7 +22,6 @@ import net.minestom.server.command.builder.arguments.ArgumentType;
 import net.minestom.server.timer.TaskSchedule;
 import net.minestom.server.scoreboard.Sidebar;
 import net.minestom.server.scoreboard.Team;
-import net.minestom.server.collision.CollisionRule;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -64,7 +63,7 @@ public class Main {
 
         // Team for disabling collisions
         Team lobbyTeam = MinecraftServer.getTeamManager().createTeam("lobby_team");
-        lobbyTeam.setCollisionRule(CollisionRule.NEVER);
+        lobbyTeam.setCollisionRule(net.minestom.server.network.packet.server.play.TeamsPacket.CollisionRule.NEVER);
 
         // Hologram
         Entity hologram = new Entity(EntityType.TEXT_DISPLAY);
@@ -202,7 +201,7 @@ public class Main {
         handler.addListener(PlayerEntityInteractEvent.class, e -> {
             if (e.getTarget().hasTag(NPC_SERVER_TAG)) {
                 String serverName = e.getTarget().getTag(NPC_SERVER_TAG);
-                e.getPlayer().chat("/server " + serverName);
+                MinecraftServer.getCommandManager().execute(e.getPlayer(), "server " + serverName);
             }
         });
 
@@ -263,8 +262,7 @@ public class Main {
             if (s instanceof Player p && "Admin".equals(p.getTag(RANK_TAG))) {
                 String serverName = c.get(serverArg);
                 Entity npc = new Entity(EntityType.PLAYER);
-                PlayerMeta meta = (PlayerMeta) npc.getEntityMeta();
-                meta.setNotifyAboutChanges(false);
+                npc.getEntityMeta().setNotifyAboutChanges(false);
                 npc.setTag(NPC_SERVER_TAG, serverName);
                 npc.setNoGravity(true);
                 npc.setInstance(instance, p.getPosition());
