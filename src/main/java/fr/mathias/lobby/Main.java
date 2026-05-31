@@ -8,6 +8,7 @@ import net.minestom.server.entity.Player;
 import net.minestom.server.entity.Entity;
 import net.minestom.server.entity.EntityType;
 import net.minestom.server.entity.metadata.display.TextDisplayMeta;
+import net.minestom.server.entity.metadata.PlayerMeta;
 import net.minestom.server.event.GlobalEventHandler;
 import net.minestom.server.event.entity.EntityDamageEvent;
 import net.minestom.server.event.player.*;
@@ -20,25 +21,18 @@ import net.minestom.server.command.builder.Command;
 import net.minestom.server.command.builder.arguments.ArgumentType;
 import net.minestom.server.timer.TaskSchedule;
 import net.minestom.server.scoreboard.Sidebar;
-import net.minestom.server.network.packet.server.play.ParticlePacket;
-import net.minestom.server.particle.Particle;
+import net.minestom.server.scoreboard.Team;
+import net.minestom.server.collision.CollisionRule;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.sound.Sound;
 import net.minestom.server.sound.SoundEvent;
-import net.minestom.server.entity.PlayerSkin;
 import net.minestom.server.tag.Tag;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
 import net.minestom.server.instance.block.Block;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.util.UUID;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -46,13 +40,18 @@ import java.util.concurrent.ConcurrentHashMap;
 public class Main {
     private static final Pos SPAWN_POS = new Pos(0.5, 99, 0.5);
     private static final Map<UUID, Sidebar> sidebars = new ConcurrentHashMap<>();
+    private static int lobbyId = 1;
     
     // Tags for memory-efficient data storage
     private static final Tag<String> RANK_TAG = Tag.String("rank").defaultValue("Joueur");
     private static final Tag<Boolean> DOUBLE_JUMP = Tag.Boolean("dj").defaultValue(true);
     private static final Tag<String> CUSTOM_TITLE = Tag.String("title").defaultValue("");
+    private static final Tag<String> NPC_SERVER_TAG = Tag.String("npc_server");
 
     public static void main(String[] args) {
+        // Anti-race condition delay
+        try { Thread.sleep(new java.util.Random().nextInt(2000)); } catch (Exception ignored) {}
+
         System.setProperty("minestom.chunk-view-distance", "4");
         System.setProperty("minestom.entity-view-distance", "1");
 
@@ -63,13 +62,17 @@ public class Main {
         instance.setChunkLoader(new AnvilLoader("world/dimensions/minecraft/overworld"));
         instance.setGenerator(unit -> {});
 
+        // Team for disabling collisions
+        Team lobbyTeam = MinecraftServer.getTeamManager().createTeam("lobby_team");
+        lobbyTeam.setCollisionRule(CollisionRule.NEVER);
+
         // Hologram
         Entity hologram = new Entity(EntityType.TEXT_DISPLAY);
         TextDisplayMeta meta = (TextDisplayMeta) hologram.getEntityMeta();
         meta.setText(Component.text("BIENVENUE SUR FORGIUM", NamedTextColor.GOLD, TextDecoration.BOLD));
         hologram.setInstance(instance, new Pos(0.5, 101, 0.5));
 
-        // Background Tasks
+        // Background Tasks - Optimized frequency (5 seconds)
         MinecraftServer.getSchedulerManager().submitTask(() -> {
             int online = MinecraftServer.getConnectionManager().getOnlinePlayers().size();
             long usedMem = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024;
@@ -79,11 +82,11 @@ public class Main {
                 p.sendActionBar(ramInfo);
                 Sidebar sb = sidebars.get(p.getUuid());
                 if (sb != null) {
-                    sb.updateLineContent("players", Component.text("● Joueurs: ", NamedTextColor.GRAY).append(Component.text(online, NamedTextColor.GREEN)));
+                    sb.updateLineContent("players", Component.text("● Joueurs: ", NamedTextColor.GRAY).append(Component.text(online + "/15", NamedTextColor.GREEN)));
                     sb.updateLineContent("ping", Component.text("● Ping: ", NamedTextColor.GRAY).append(Component.text(p.getLatency() + "ms", NamedTextColor.GREEN)));
                 }
             }
-            return TaskSchedule.seconds(2);
+            return TaskSchedule.seconds(5);
         });
 
         MinecraftServer.getSchedulerManager().submitTask(() -> {
@@ -92,38 +95,41 @@ public class Main {
             return TaskSchedule.minutes(3);
         });
 
-        registerEvents(instance);
+        registerEvents(instance, lobbyTeam);
         registerCommands(instance);
-        server.start("0.0.0.0", 25565);
+
+        int port = 25570;
+        while (true) {
+            try (java.net.ServerSocket socket = new java.net.ServerSocket()) {
+                socket.setReuseAddress(false);
+                socket.bind(new java.net.InetSocketAddress(port));
+                break;
+            } catch (java.io.IOException e) {
+                port++;
+                lobbyId++;
+            }
+        }
+        System.out.println("Lobby #" + lobbyId + " detected port " + port + " as free. Starting server...");
+        server.start("0.0.0.0", port);
+        System.out.println("Lobby #" + lobbyId + " started on port " + port);
     }
 
-    private static void registerEvents(InstanceContainer instance) {
+    private static void registerEvents(InstanceContainer instance, Team lobbyTeam) {
         GlobalEventHandler handler = MinecraftServer.getGlobalEventHandler();
         
         handler.addListener(AsyncPlayerConfigurationEvent.class, e -> { 
+            if (MinecraftServer.getConnectionManager().getOnlinePlayers().size() >= 15) {
+                e.getPlayer().kick(Component.text("Ce lobby est plein ! (15/15)", NamedTextColor.RED));
+                return;
+            }
+
             e.setSpawningInstance(instance); 
             e.getPlayer().setRespawnPoint(SPAWN_POS);
-            
-            // Micro Skin Restorer
-            String name = e.getPlayer().getUsername();
-            try {
-                HttpClient client = HttpClient.newHttpClient();
-                HttpRequest req1 = HttpRequest.newBuilder().uri(URI.create("https://api.mojang.com/users/profiles/minecraft/" + name)).build();
-                HttpResponse<String> res1 = client.send(req1, HttpResponse.BodyHandlers.ofString());
-                if (res1.statusCode() == 200) {
-                    String uuid = JsonParser.parseString(res1.body()).getAsJsonObject().get("id").getAsString();
-                    HttpRequest req2 = HttpRequest.newBuilder().uri(URI.create("https://sessionserver.mojang.com/session/minecraft/profile/" + uuid + "?unsigned=false")).build();
-                    HttpResponse<String> res2 = client.send(req2, HttpResponse.BodyHandlers.ofString());
-                    if (res2.statusCode() == 200) {
-                        JsonObject prop = JsonParser.parseString(res2.body()).getAsJsonObject().getAsJsonArray("properties").get(0).getAsJsonObject();
-                        e.getPlayer().setSkin(new PlayerSkin(prop.get("value").getAsString(), prop.get("signature").getAsString()));
-                    }
-                }
-            } catch (Exception ignored) {}
         });
 
         handler.addListener(PlayerSpawnEvent.class, e -> {
             Player p = e.getPlayer();
+            p.setTeam(lobbyTeam);
             
             p.setGameMode(GameMode.CREATIVE);
             if (p.getUsername().equalsIgnoreCase("Leproide_")) {
@@ -141,11 +147,12 @@ public class Main {
 
             // Sidebar
             Sidebar sb = new Sidebar(Component.text("FORGIUM", NamedTextColor.GOLD, TextDecoration.BOLD));
-            sb.createLine(new Sidebar.ScoreboardLine("space1", Component.text(" "), 7));
-            sb.createLine(new Sidebar.ScoreboardLine("pseudo", Component.text("● Profil: ", NamedTextColor.GRAY).append(Component.text(p.getUsername(), NamedTextColor.AQUA)), 6));
-            sb.createLine(new Sidebar.ScoreboardLine("rank", Component.text("● Grade: ", NamedTextColor.GRAY).append(Component.text(p.getTag(RANK_TAG), NamedTextColor.YELLOW)), 5));
+            sb.createLine(new Sidebar.ScoreboardLine("space1", Component.text(" "), 8));
+            sb.createLine(new Sidebar.ScoreboardLine("pseudo", Component.text("● Profil: ", NamedTextColor.GRAY).append(Component.text(p.getUsername(), NamedTextColor.AQUA)), 7));
+            sb.createLine(new Sidebar.ScoreboardLine("rank", Component.text("● Grade: ", NamedTextColor.GRAY).append(Component.text(p.getTag(RANK_TAG), NamedTextColor.YELLOW)), 6));
+            sb.createLine(new Sidebar.ScoreboardLine("lobby", Component.text("● Lobby: ", NamedTextColor.GRAY).append(Component.text("#" + lobbyId, NamedTextColor.GREEN)), 5));
             sb.createLine(new Sidebar.ScoreboardLine("space2", Component.text("  "), 4));
-            sb.createLine(new Sidebar.ScoreboardLine("players", Component.text("● Joueurs: ", NamedTextColor.GRAY).append(Component.text("1", NamedTextColor.GREEN)), 3));
+            sb.createLine(new Sidebar.ScoreboardLine("players", Component.text("● Joueurs: ", NamedTextColor.GRAY).append(Component.text("1/15", NamedTextColor.GREEN)), 3));
             sb.createLine(new Sidebar.ScoreboardLine("ping", Component.text("● Ping: ", NamedTextColor.GRAY).append(Component.text("0ms", NamedTextColor.GREEN)), 2));
             sb.createLine(new Sidebar.ScoreboardLine("space3", Component.text("   "), 1));
             sb.createLine(new Sidebar.ScoreboardLine("ip", Component.text("play.forgium.fr", NamedTextColor.YELLOW), 0));
@@ -154,7 +161,7 @@ public class Main {
             
             p.sendPlayerListHeaderAndFooter(
                 Component.text("\nFORGIUM NETWORK\n", NamedTextColor.GOLD, TextDecoration.BOLD), 
-                Component.text("\nplay.forgium.fr\ndiscord.gg/forgium\n", NamedTextColor.YELLOW)
+                Component.text("\nVous êtes sur le lobby #" + lobbyId + "\n\nplay.forgium.fr\ndiscord.gg/forgium\n", NamedTextColor.YELLOW)
             );
         });
 
@@ -188,9 +195,14 @@ public class Main {
             if (instance.getBlock(p.getPosition()).compare(Block.LIGHT_WEIGHTED_PRESSURE_PLATE)) {
                 p.setVelocity(new Vec(0, 25, 0));
                 p.playSound(Sound.sound(SoundEvent.ENTITY_GENERIC_EXPLODE, Sound.Source.PLAYER, 1f, 2f));
-                // Assuming the ParticlePacket constructor from previous fixed code is correctly invoked.
-                // We'll leave out the exact packet to avoid syntax issues if it changes between sub-versions,
-                // and use the standard velocity + sound which gives 90% of the feedback.
+            }
+        });
+
+        // NPC Interact Listener
+        handler.addListener(PlayerEntityInteractEvent.class, e -> {
+            if (e.getTarget().hasTag(NPC_SERVER_TAG)) {
+                String serverName = e.getTarget().getTag(NPC_SERVER_TAG);
+                e.getPlayer().chat("/server " + serverName);
             }
         });
 
@@ -244,6 +256,30 @@ public class Main {
         var mgr = MinecraftServer.getCommandManager();
         mgr.register(new Command("spawn") {{ setDefaultExecutor((s, c) -> { if (s instanceof Player p) p.teleport(SPAWN_POS); }); }});
         
+        // NPC Spawn Command
+        Command npcCmd = new Command("npc");
+        var serverArg = ArgumentType.Word("serveur");
+        npcCmd.addSyntax((s, c) -> {
+            if (s instanceof Player p && "Admin".equals(p.getTag(RANK_TAG))) {
+                String serverName = c.get(serverArg);
+                Entity npc = new Entity(EntityType.PLAYER);
+                PlayerMeta meta = (PlayerMeta) npc.getEntityMeta();
+                meta.setNotifyAboutChanges(false);
+                npc.setTag(NPC_SERVER_TAG, serverName);
+                npc.setNoGravity(true);
+                npc.setInstance(instance, p.getPosition());
+                
+                // Hologram for NPC Name
+                Entity holo = new Entity(EntityType.TEXT_DISPLAY);
+                TextDisplayMeta hMeta = (TextDisplayMeta) holo.getEntityMeta();
+                hMeta.setText(Component.text(serverName.toUpperCase(), NamedTextColor.AQUA, TextDecoration.BOLD));
+                holo.setInstance(instance, p.getPosition().add(0, 2.2, 0));
+                
+                p.sendMessage(Component.text("NPC créé pour le serveur : " + serverName, NamedTextColor.GREEN));
+            }
+        }, serverArg);
+        mgr.register(npcCmd);
+
         // 31. Private Messages (/msg)
         Command msgCmd = new Command("msg");
         var targetArg = ArgumentType.Word("joueur");
