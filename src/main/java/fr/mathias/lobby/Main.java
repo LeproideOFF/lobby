@@ -60,6 +60,7 @@ public class Main {
         
         instance.setChunkLoader(new AnvilLoader("world/dimensions/minecraft/overworld"));
         instance.setGenerator(unit -> {});
+        instance.setTimeRate(0); // Optimization: Disable time flow (Chunk Ticking/Light updates)
 
         // Team for disabling collisions
         Team lobbyTeam = MinecraftServer.getTeamManager().createTeam("lobby_team");
