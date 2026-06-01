@@ -40,7 +40,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class Main {
-    private static final String VERSION = "0.9";
+    private static final String VERSION = "1.0";
     private static final Pos SPAWN_POS = new Pos(0.5, 99, 0.5);
     private static final Map<UUID, Sidebar> sidebars = new ConcurrentHashMap<>();
     private static int lobbyId = 1;
@@ -157,12 +157,12 @@ public class Main {
             sb.createLine(new Sidebar.ScoreboardLine("pseudo", Component.text("● Profil: ", NamedTextColor.GRAY).append(Component.text(p.getUsername(), NamedTextColor.AQUA)), 7));
             sb.createLine(new Sidebar.ScoreboardLine("rank", Component.text("● Grade: ", NamedTextColor.GRAY).append(Component.text(p.getTag(RANK_TAG), NamedTextColor.YELLOW)), 6));
             sb.createLine(new Sidebar.ScoreboardLine("lobby", Component.text("● Lobby: ", NamedTextColor.GRAY).append(Component.text("#" + lobbyId, NamedTextColor.GREEN)), 5));
-            sb.createLine(new Sidebar.ScoreboardLine("version", Component.text("● Version: ", NamedTextColor.GRAY).append(Component.text("v" + VERSION, NamedTextColor.WHITE)), 4));
             sb.createLine(new Sidebar.ScoreboardLine("space2", Component.text("  "), 3));
             sb.createLine(new Sidebar.ScoreboardLine("players", Component.text("● Joueurs: ", NamedTextColor.GRAY).append(Component.text("1/15", NamedTextColor.GREEN)), 2));
             sb.createLine(new Sidebar.ScoreboardLine("ping", Component.text("● Ping: ", NamedTextColor.GRAY).append(Component.text("0ms", NamedTextColor.GREEN)), 1));
             sb.createLine(new Sidebar.ScoreboardLine("ip", Component.text("play.forgium.fr", NamedTextColor.YELLOW), 0));
-            sb.addViewer(p);
+            sb.addViewer(p);sb.createLine(new Sidebar.ScoreboardLine("version", Component.text("Version: ", NamedTextColor.GRAY).append(Component.text("v" + VERSION, NamedTextColor.WHITE)), 4));
+
             sidebars.put(p.getUuid(), sb);
             
             p.sendPlayerListHeaderAndFooter(
