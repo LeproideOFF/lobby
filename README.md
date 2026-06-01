@@ -18,8 +18,7 @@ Built-in minimalist WorldEdit for basic building without heavy plugins:
 - **Spawn Command**: `/spawn` to return to the center instantly.
 
 ### 📊 Live Monitoring & UX
-- **Scoreboard**: Real-time Sidebar displaying RAM usage (MB) and Online Players.
-- **Action Bar**: Live RAM monitoring at the bottom of the screen.
+- **Scoreboard**: Real-time Sidebar displaying player info and online count.
 - **Tablist**: Customized Header/Footer with server branding.
 - **Chat Formatting**: Clean and colored chat format (`Name > Message`).
 - **Auto-Announcements**: Periodic tips and news in the chat.

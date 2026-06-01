@@ -32,11 +32,15 @@ import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
 import net.minestom.server.instance.block.Block;
 
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.util.UUID;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class Main {
+    private static final String VERSION = "0.9";
     private static final Pos SPAWN_POS = new Pos(0.5, 99, 0.5);
     private static final Map<UUID, Sidebar> sidebars = new ConcurrentHashMap<>();
     private static int lobbyId = 1;
@@ -68,14 +72,25 @@ public class Main {
         meta.setText(Component.text("BIENVENUE SUR FORGIUM", NamedTextColor.GOLD, TextDecoration.BOLD));
         hologram.setInstance(instance, new Pos(0.5, 101, 0.5));
 
+        // NPC Survie
+        Pos npcPos = new Pos(5, 99, 4);
+        Entity npcSurvie = new Entity(EntityType.VILLAGER);
+        npcSurvie.setTag(NPC_SERVER_TAG, "survie");
+        npcSurvie.setNoGravity(true);
+        npcSurvie.setInstance(instance, npcPos);
+
+        // Name Tag for NPC
+        Entity holoSurvie = new Entity(EntityType.TEXT_DISPLAY);
+        TextDisplayMeta hMetaSurvie = (TextDisplayMeta) holoSurvie.getEntityMeta();
+        hMetaSurvie.setText(Component.text("SURVIE", NamedTextColor.GOLD, TextDecoration.BOLD));
+        hMetaSurvie.setScale(new Vec(2, 2, 2));
+        holoSurvie.setInstance(instance, npcPos.add(0, 2.3, 0));
+
         // Background Tasks - Optimized frequency (5 seconds)
         MinecraftServer.getSchedulerManager().submitTask(() -> {
             int online = MinecraftServer.getConnectionManager().getOnlinePlayers().size();
-            long usedMem = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024;
-            Component ramInfo = Component.text("RAM: " + usedMem + "MB", NamedTextColor.GOLD, TextDecoration.BOLD);
 
             for (Player p : instance.getPlayers()) {
-                p.sendActionBar(ramInfo);
                 Sidebar sb = sidebars.get(p.getUuid());
                 if (sb != null) {
                     sb.updateLineContent("players", Component.text("● Joueurs: ", NamedTextColor.GRAY).append(Component.text(online + "/15", NamedTextColor.GREEN)));
@@ -136,27 +151,23 @@ public class Main {
             
             p.addEffect(new net.minestom.server.potion.Potion(net.minestom.server.potion.PotionEffect.NIGHT_VISION, (byte) 0, Integer.MAX_VALUE));
             
-            // 9. Compass Selector
-            ItemStack compass = ItemStack.of(Material.COMPASS).withCustomName(Component.text("Sélecteur de Serveur", NamedTextColor.GOLD));
-            p.getInventory().setItemStack(4, compass);
-
             // Sidebar
             Sidebar sb = new Sidebar(Component.text("FORGIUM", NamedTextColor.GOLD, TextDecoration.BOLD));
             sb.createLine(new Sidebar.ScoreboardLine("space1", Component.text(" "), 8));
             sb.createLine(new Sidebar.ScoreboardLine("pseudo", Component.text("● Profil: ", NamedTextColor.GRAY).append(Component.text(p.getUsername(), NamedTextColor.AQUA)), 7));
             sb.createLine(new Sidebar.ScoreboardLine("rank", Component.text("● Grade: ", NamedTextColor.GRAY).append(Component.text(p.getTag(RANK_TAG), NamedTextColor.YELLOW)), 6));
             sb.createLine(new Sidebar.ScoreboardLine("lobby", Component.text("● Lobby: ", NamedTextColor.GRAY).append(Component.text("#" + lobbyId, NamedTextColor.GREEN)), 5));
-            sb.createLine(new Sidebar.ScoreboardLine("space2", Component.text("  "), 4));
-            sb.createLine(new Sidebar.ScoreboardLine("players", Component.text("● Joueurs: ", NamedTextColor.GRAY).append(Component.text("1/15", NamedTextColor.GREEN)), 3));
-            sb.createLine(new Sidebar.ScoreboardLine("ping", Component.text("● Ping: ", NamedTextColor.GRAY).append(Component.text("0ms", NamedTextColor.GREEN)), 2));
-            sb.createLine(new Sidebar.ScoreboardLine("space3", Component.text("   "), 1));
+            sb.createLine(new Sidebar.ScoreboardLine("version", Component.text("● Version: ", NamedTextColor.GRAY).append(Component.text("v" + VERSION, NamedTextColor.WHITE)), 4));
+            sb.createLine(new Sidebar.ScoreboardLine("space2", Component.text("  "), 3));
+            sb.createLine(new Sidebar.ScoreboardLine("players", Component.text("● Joueurs: ", NamedTextColor.GRAY).append(Component.text("1/15", NamedTextColor.GREEN)), 2));
+            sb.createLine(new Sidebar.ScoreboardLine("ping", Component.text("● Ping: ", NamedTextColor.GRAY).append(Component.text("0ms", NamedTextColor.GREEN)), 1));
             sb.createLine(new Sidebar.ScoreboardLine("ip", Component.text("play.forgium.fr", NamedTextColor.YELLOW), 0));
             sb.addViewer(p);
             sidebars.put(p.getUuid(), sb);
             
             p.sendPlayerListHeaderAndFooter(
                 Component.text("\nFORGIUM NETWORK\n", NamedTextColor.GOLD, TextDecoration.BOLD), 
-                Component.text("\nVous êtes sur le lobby #" + lobbyId + "\n\nplay.forgium.fr\ndiscord.gg/forgium\n", NamedTextColor.YELLOW)
+                Component.text("\nLobby #" + lobbyId + " (v" + VERSION + ")\n\nplay.forgium.fr\ndiscord.gg/forgium\n", NamedTextColor.YELLOW)
             );
         });
 
@@ -195,9 +206,20 @@ public class Main {
 
         // NPC Interact Listener
         handler.addListener(PlayerEntityInteractEvent.class, e -> {
-            if (e.getTarget().hasTag(NPC_SERVER_TAG)) {
-                String serverName = e.getTarget().getTag(NPC_SERVER_TAG);
-                MinecraftServer.getCommandManager().execute(e.getPlayer(), "server " + serverName);
+            Entity target = e.getTarget();
+            if (target.hasTag(NPC_SERVER_TAG)) {
+                String serverName = target.getTag(NPC_SERVER_TAG);
+                e.getPlayer().sendMessage(Component.text("Connexion à " + serverName + "...", NamedTextColor.YELLOW));
+                
+                try {
+                    ByteArrayOutputStream b = new ByteArrayOutputStream();
+                    DataOutputStream out = new DataOutputStream(b);
+                    out.writeUTF("Connect");
+                    out.writeUTF(serverName);
+                    e.getPlayer().sendPluginMessage("bungeecord:main", b.toByteArray());
+                } catch (IOException ex) {
+                    ex.printStackTrace();
+                }
             }
         });
 
@@ -222,9 +244,9 @@ public class Main {
                     p.setTag(DOUBLE_JUMP, true);
                     p.setAllowFlying(true);
                 }
-                // Clear any item taken from creative mode except the compass in slot 4
+                // Clear any item taken from creative mode
                 for (int i = 0; i < p.getInventory().getSize(); i++) {
-                    if (i != 4 && !p.getInventory().getItemStack(i).isAir()) {
+                    if (!p.getInventory().getItemStack(i).isAir()) {
                         p.getInventory().setItemStack(i, ItemStack.AIR);
                     }
                 }
@@ -238,13 +260,6 @@ public class Main {
         
         // Anti-Drop
         handler.addListener(ItemDropEvent.class, e -> e.setCancelled(true));
-        
-        // 9. Compass interact
-        handler.addListener(PlayerUseItemEvent.class, e -> {
-            if (e.getItemStack().material() == Material.COMPASS) {
-                e.getPlayer().sendMessage(Component.text("Ouverture du menu des serveurs... (Bientôt)", NamedTextColor.AQUA));
-            }
-        });
     }
 
     private static void registerCommands(InstanceContainer instance) {
