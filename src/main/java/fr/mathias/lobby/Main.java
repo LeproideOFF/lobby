@@ -59,7 +59,16 @@ public class Main {
         InstanceManager instanceManager = MinecraftServer.getInstanceManager();
         InstanceContainer instance = instanceManager.createInstanceContainer(DimensionType.OVERWORLD);
         
-        instance.setChunkLoader(new AnvilLoader("world/dimensions/minecraft/overworld"));
+        String worldPath = "world/dimensions/minecraft/overworld";
+        java.io.File worldFolder = new java.io.File(worldPath);
+        System.out.println("Checking map at: " + worldFolder.getAbsolutePath());
+        if (!worldFolder.exists()) {
+            System.err.println("CRITICAL: Map folder NOT FOUND at " + worldPath);
+        } else {
+            System.out.println("Map folder found! Loading...");
+        }
+
+        instance.setChunkLoader(new AnvilLoader(worldPath));
         instance.setGenerator(unit -> {});
 
         // Team for disabling collisions
