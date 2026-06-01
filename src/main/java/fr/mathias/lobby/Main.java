@@ -48,9 +48,6 @@ public class Main {
     private static final Tag<String> NPC_SERVER_TAG = Tag.String("npc_server");
 
     public static void main(String[] args) {
-        // Anti-race condition delay
-        try { Thread.sleep(new java.util.Random().nextInt(2000)); } catch (Exception ignored) {}
-
         System.setProperty("minestom.chunk-view-distance", "4");
         System.setProperty("minestom.entity-view-distance", "1");
 
@@ -60,7 +57,6 @@ public class Main {
         
         instance.setChunkLoader(new AnvilLoader("world/dimensions/minecraft/overworld"));
         instance.setGenerator(unit -> {});
-        instance.setTimeRate(0); // Optimization: Disable time flow (Chunk Ticking/Light updates)
 
         // Team for disabling collisions
         Team lobbyTeam = MinecraftServer.getTeamManager().createTeam("lobby_team");
@@ -98,20 +94,19 @@ public class Main {
         registerEvents(instance, lobbyTeam);
         registerCommands(instance);
 
-        int port = 25570;
-        while (true) {
-            try (java.net.ServerSocket socket = new java.net.ServerSocket()) {
-                socket.setReuseAddress(false);
-                socket.bind(new java.net.InetSocketAddress(port));
-                break;
-            } catch (java.io.IOException e) {
-                port++;
-                lobbyId++;
-            }
-        }
-        System.out.println("Lobby #" + lobbyId + " detected port " + port + " as free. Starting server...");
+        // Lobby ID and Port logic based on system property or env var
+        String lobbyIdStr = System.getProperty("lobby.id", System.getenv("LOBBY_ID"));
+        lobbyId = (lobbyIdStr != null) ? Integer.parseInt(lobbyIdStr) : 1;
+        int port = 25570 + (lobbyId - 1);
+
+        System.out.println("Lobby #" + lobbyId + " starting on port " + port + "...");
         server.start("0.0.0.0", port);
         System.out.println("Lobby #" + lobbyId + " started on port " + port);
+        
+        // Keep the main thread alive
+        while (true) {
+            try { Thread.sleep(10000); } catch (InterruptedException e) { break; }
+        }
     }
 
     private static void registerEvents(InstanceContainer instance, Team lobbyTeam) {
@@ -262,19 +257,21 @@ public class Main {
         npcCmd.addSyntax((s, c) -> {
             if (s instanceof Player p && "Admin".equals(p.getTag(RANK_TAG))) {
                 String serverName = c.get(serverArg);
-                Entity npc = new Entity(EntityType.PLAYER);
-                npc.getEntityMeta().setNotifyAboutChanges(false);
+                
+                // NPC Entity (Villager for visibility)
+                Entity npc = new Entity(EntityType.VILLAGER);
                 npc.setTag(NPC_SERVER_TAG, serverName);
                 npc.setNoGravity(true);
                 npc.setInstance(instance, p.getPosition());
                 
-                // Hologram for NPC Name
+                // Hologram for NPC Name (Floating above)
                 Entity holo = new Entity(EntityType.TEXT_DISPLAY);
                 TextDisplayMeta hMeta = (TextDisplayMeta) holo.getEntityMeta();
-                hMeta.setText(Component.text(serverName.toUpperCase(), NamedTextColor.AQUA, TextDecoration.BOLD));
-                holo.setInstance(instance, p.getPosition().add(0, 2.2, 0));
+                hMeta.setText(Component.text(serverName.toUpperCase(), NamedTextColor.GOLD, TextDecoration.BOLD));
+                hMeta.setScale(new Vec(1.5, 1.5, 1.5));
+                holo.setInstance(instance, p.getPosition().add(0, 2.4, 0));
                 
-                p.sendMessage(Component.text("NPC créé pour le serveur : " + serverName, NamedTextColor.GREEN));
+                p.sendMessage(Component.text("PNJ créé avec succès pour : " + serverName, NamedTextColor.GREEN));
             }
         }, serverArg);
         mgr.register(npcCmd);
