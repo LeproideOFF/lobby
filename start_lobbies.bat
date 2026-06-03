@@ -30,7 +30,7 @@ if not exist "%JAR_PATH%" (
 
     :: Check for system Maven
     mvn -version >nul 2>&1
-    if %errorlevel% eq 0 (
+    if !errorlevel! equ 0 (
         echo [INFO] Utilisation de Maven installe sur le systeme...
         call mvn package -DskipTests
     ) else (
@@ -38,7 +38,7 @@ if not exist "%JAR_PATH%" (
         if not exist "%PORTABLE_MVN_DIR%" (
             echo [INFO] Telechargement de Maven %MVN_VERSION%...
             powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%MVN_URL%' -OutFile 'mvn.zip'"
-            if %errorlevel% neq 0 (
+            if !errorlevel! neq 0 (
                 echo [ERREUR] Echec du telechargement de Maven. Verifiez votre connexion internet.
                 pause
                 exit /b
@@ -48,11 +48,17 @@ if not exist "%JAR_PATH%" (
             del mvn.zip
         )
         
-        for /d %%i in ("%PORTABLE_MVN_DIR%\apache-maven-*") do set MVN_BIN_DIR=%%~fi\bin
-        set "PATH=!MVN_BIN_DIR!;%PATH%"
+        set "MVN_BIN_DIR="
+        for /d %%i in ("%PORTABLE_MVN_DIR%\apache-maven-*") do set "MVN_BIN_DIR=%%~fi\bin"
         
-        echo [INFO] Compilation via Maven portable...
-        call "!MVN_BIN_DIR!\mvn.cmd" package -DskipTests
+        if defined MVN_BIN_DIR (
+            echo [INFO] Compilation via Maven portable...
+            call "!MVN_BIN_DIR!\mvn.cmd" package -DskipTests
+        ) else (
+            echo [ERREUR] Impossible de trouver le dossier binaire de Maven portable.
+            pause
+            exit /b
+        )
     )
 )
 
