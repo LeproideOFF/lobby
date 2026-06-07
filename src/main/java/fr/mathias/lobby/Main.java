@@ -55,13 +55,11 @@ public class Main {
         // Essential properties
         System.setProperty("minestom.chunk-view-distance", "4");
         System.setProperty("minestom.entity-view-distance", "1");
-        System.setProperty("minestom.velocity.secret", "sII87EnuTLpn");
 
-        // Initialisation
-        MinecraftServer server = MinecraftServer.init();
-
-        // Activation robuste de Velocity via plusieurs packages possibles
-        enableVelocity("sII87EnuTLpn");
+        // Initialisation avec Velocity (Nouvelle API Minestom)
+        String velocitySecret = "sII87EnuTLpn";
+        MinecraftServer server = MinecraftServer.init(new net.minestom.server.Auth.Velocity(velocitySecret));
+        System.out.println("[Velocity] Modern forwarding activé avec le secret.");
 
         InstanceManager instanceManager = MinecraftServer.getInstanceManager();
         InstanceContainer instance = instanceManager.createInstanceContainer(DimensionType.OVERWORLD);
@@ -138,23 +136,6 @@ public class Main {
         while (true) {
             try { Thread.sleep(10000); } catch (InterruptedException e) { break; }
         }
-    }
-
-    private static void enableVelocity(String secret) {
-        String[] possibleClasses = {
-            "net.minestom.server.extras.velocity.VelocityProxy",
-            "net.minestom.server.network.VelocityProxy",
-            "net.minestom.extras.velocity.VelocityProxy"
-        };
-        for (String className : possibleClasses) {
-            try {
-                Class<?> clazz = Class.forName(className);
-                clazz.getMethod("enable", String.class).invoke(null, secret);
-                System.out.println("[Velocity] Activé via " + className);
-                return;
-            } catch (Exception ignored) {}
-        }
-        System.err.println("[Velocity] ERREUR: Impossible d'activer le support Velocity. Le package est introuvable.");
     }
 
     private static void registerEvents(InstanceContainer instance, Team lobbyTeam) {
