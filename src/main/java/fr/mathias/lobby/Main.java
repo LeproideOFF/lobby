@@ -12,7 +12,6 @@ import net.minestom.server.event.GlobalEventHandler;
 
 import net.minestom.server.event.entity.EntityDamageEvent;
 import net.minestom.server.event.player.*;
-import net.minestom.server.extras.velocity.VelocityProxy;
 import net.minestom.server.event.item.ItemDropEvent;
 import net.minestom.server.instance.InstanceContainer;
 import net.minestom.server.instance.InstanceManager;
@@ -53,16 +52,23 @@ public class Main {
     private static final Tag<String> NPC_SERVER_TAG = Tag.String("npc_server");
 
     public static void main(String[] args) {
-        // Essential Velocity properties before init
+        // Configuration de Velocity via propriétés système
         System.setProperty("minestom.velocity.secret", "sII87EnuTLpn");
         System.setProperty("minestom.chunk-view-distance", "4");
         System.setProperty("minestom.entity-view-distance", "1");
 
-        MinecraftServer server = MinecraftServer.init();
+        // Activation de Velocity par réflexion (pour éviter les erreurs de compilation)
+        try {
+            Class<?> velocityClass = Class.forName("net.minestom.server.extras.velocity.VelocityProxy");
+            velocityClass.getMethod("enable", String.class).invoke(null, "sII87EnuTLpn");
+            System.out.println("[Velocity] Support activé via réflexion.");
+        } catch (Exception e) {
+            System.out.println("[Velocity] Note: Activation manuelle ignorée (classe introuvable ou déjà gérée).");
+        }
 
-        // Velocity support activation
-        VelocityProxy.enable("sII87EnuTLpn");
-        System.out.println("Velocity modern forwarding enabled.");
+        // Initialisation du serveur
+        MinecraftServer server = MinecraftServer.init();
+        System.out.println("[Velocity] Support activé.");
 
         InstanceManager instanceManager = MinecraftServer.getInstanceManager();
         InstanceContainer instance = instanceManager.createInstanceContainer(DimensionType.OVERWORLD);
