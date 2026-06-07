@@ -53,12 +53,14 @@ public class Main {
     private static final Tag<String> NPC_SERVER_TAG = Tag.String("npc_server");
 
     public static void main(String[] args) {
+        // Essential Velocity properties before init
+        System.setProperty("minestom.velocity.secret", "sII87EnuTLpn");
         System.setProperty("minestom.chunk-view-distance", "4");
         System.setProperty("minestom.entity-view-distance", "1");
 
         MinecraftServer server = MinecraftServer.init();
 
-        // Velocity support
+        // Velocity support activation
         VelocityProxy.enable("sII87EnuTLpn");
         System.out.println("Velocity modern forwarding enabled.");
 
