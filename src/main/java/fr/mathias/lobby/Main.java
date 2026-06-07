@@ -52,23 +52,16 @@ public class Main {
     private static final Tag<String> NPC_SERVER_TAG = Tag.String("npc_server");
 
     public static void main(String[] args) {
-        // Configuration de Velocity via propriétés système
-        System.setProperty("minestom.velocity.secret", "sII87EnuTLpn");
+        // Essential properties
         System.setProperty("minestom.chunk-view-distance", "4");
         System.setProperty("minestom.entity-view-distance", "1");
+        System.setProperty("minestom.velocity.secret", "sII87EnuTLpn");
 
-        // Activation de Velocity par réflexion (pour éviter les erreurs de compilation)
-        try {
-            Class<?> velocityClass = Class.forName("net.minestom.server.extras.velocity.VelocityProxy");
-            velocityClass.getMethod("enable", String.class).invoke(null, "sII87EnuTLpn");
-            System.out.println("[Velocity] Support activé via réflexion.");
-        } catch (Exception e) {
-            System.out.println("[Velocity] Note: Activation manuelle ignorée (classe introuvable ou déjà gérée).");
-        }
-
-        // Initialisation du serveur
+        // Initialisation
         MinecraftServer server = MinecraftServer.init();
-        System.out.println("[Velocity] Support activé.");
+
+        // Activation robuste de Velocity via plusieurs packages possibles
+        enableVelocity("sII87EnuTLpn");
 
         InstanceManager instanceManager = MinecraftServer.getInstanceManager();
         InstanceContainer instance = instanceManager.createInstanceContainer(DimensionType.OVERWORLD);
@@ -145,6 +138,23 @@ public class Main {
         while (true) {
             try { Thread.sleep(10000); } catch (InterruptedException e) { break; }
         }
+    }
+
+    private static void enableVelocity(String secret) {
+        String[] possibleClasses = {
+            "net.minestom.server.extras.velocity.VelocityProxy",
+            "net.minestom.server.network.VelocityProxy",
+            "net.minestom.extras.velocity.VelocityProxy"
+        };
+        for (String className : possibleClasses) {
+            try {
+                Class<?> clazz = Class.forName(className);
+                clazz.getMethod("enable", String.class).invoke(null, secret);
+                System.out.println("[Velocity] Activé via " + className);
+                return;
+            } catch (Exception ignored) {}
+        }
+        System.err.println("[Velocity] ERREUR: Impossible d'activer le support Velocity. Le package est introuvable.");
     }
 
     private static void registerEvents(InstanceContainer instance, Team lobbyTeam) {

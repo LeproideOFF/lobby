@@ -8,16 +8,16 @@
     <version>1.0</version>
 
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
     <dependencies>
         <dependency>
-            <groupId>com.github.Minestom</groupId>
-            <artifactId>Minestom</artifactId>
-            <version>master-SNAPSHOT</version>
+            <groupId>net.minestom</groupId>
+            <artifactId>minestom</artifactId>
+            <version>2026.06.02-26.1.2</version>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -28,8 +28,16 @@
 
     <repositories>
         <repository>
-            <id>jitpack</id>
-            <url>https://jitpack.io</url>
+            <id>central</id>
+            <url>https://repo.maven.apache.org/maven2</url>
+        </repository>
+        <repository>
+            <id>sonatype-snapshots</id>
+            <url>https://s01.oss.sonatype.org/content/repositories/snapshots/</url>
+        </repository>
+        <repository>
+            <id>sonatype-releases</id>
+            <url>https://s01.oss.sonatype.org/content/repositories/releases/</url>
         </repository>
     </repositories>
 
