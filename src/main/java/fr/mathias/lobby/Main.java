@@ -41,7 +41,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class Main {
-    private static final String VERSION = "1.0";
+    private static final String VERSION = "1.2";
     private static final Pos SPAWN_POS = new Pos(0.5, 99, 0.5);
     private static final Map<UUID, Sidebar> sidebars = new ConcurrentHashMap<>();
     private static int lobbyId = 1;
